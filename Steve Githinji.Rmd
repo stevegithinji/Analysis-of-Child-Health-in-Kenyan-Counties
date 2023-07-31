@@ -1,0 +1,603 @@
+---
+title: "An Analysis of Child Health in Kenyan Counties"
+author: "Author: Steve Githinji"
+date: "2023-07-20"
+output: html_document
+---
+<hr> <!-- Horizontal border here -->
+## Business Problem
+A non-profit organization dedicated to improving child health in Kenya aims to understand the current status of child health indicators across various counties. They seek to identify trends, regional disparities, and potential factors affecting child health. Additionally, the organization wishes to evaluate the impact of deworming programs on reducing diarrhea cases among children.
+
+To address these objectives, the organization needs an in-depth analysis of data spanning from January 2021 to June 2023, focusing on indicators like acute malnutrition, stunting, diarrhea cases, and underweight children. By gaining insights into these aspects, the organization hopes to develop targeted interventions to promote healthier child development, reduce health disparities among counties, and enhance the effectiveness of deworming initiatives in combating diarrhea cases.
+<hr> <!-- Horizontal border here -->
+
+## Objectives
+* To identify trends in child health indicators by examining how acute malnutrition, stunting, diarrhea cases, and underweight children cases have evolved over the period from January 2021 to June 2023
+* To identify regional disparities in child health between different counties in Kenya
+* To investigate if there are significant differences in health indicators between different age groups (0-6 months, 6-23 months, and 24-59 months)
+* To investigate impact of deworming programs on prevalence of diarrhea cases 
+<hr> <!-- Horizontal border here -->
+
+## Data Understanding
+
+In this section, we will load and preview the data from the CSV file named "cema_internship_task_2023.csv" located inside then preview the data.
+
+```{r}
+# Load data from CSV
+data <- read.csv("data/cema_internship_task_2023.csv")
+
+# Preview the data
+head(data)
+```
+The dataset contains monthly data for children <5 years, disaggregated at a county level for the period January 2021 to June 2023.
+
+The county column contains the suffix 'County' in each entry. Below, we remove this suffix for tidier visualiztions later.
+```{r}
+# Load stringr library
+library(stringr)
+# Remove 'County' suffix
+data$county <- gsub("County$", "", data$county)
+# Remove leading and trailing whitespaces in the 'county' column
+data$county <- str_trim(data$county)
+```
+
+Here we use glimpse() method to get an informative summary of the data frame's structure, showing the first few rows of the data and the data types of each variable.
+
+```{r, message = FALSE}
+# Load dplyr package with message suppressed
+suppressMessages(library(dplyr))
+
+# Get concise summary
+glimpse(data)
+```
+The dataset contains 1,410 rows and 11 columns. Data types pressent include integers, characters and doubles. Next we generate summary statistics for each numerical variable (column) in the data.
+
+```{r}
+# Get a more detailed summary
+summary(data)
+```
+Next we investigate the number of unique counties present in the dataset.
+```{r}
+# Get unique values in the 'county' column
+unique_counties <- unique(data$county)
+
+# Get the number of unique values
+num_unique_counties <- length(unique_counties)
+
+# Print unique values and number of unique values
+cat("Unique Counties:\n")
+cat(paste(unique_counties, collapse = ", "))
+
+cat("\nNumber of Unique Counties:", num_unique_counties)
+```
+The dataset contains information for all the 47 counties in Kenya.
+<hr> <!-- Horizontal border here -->
+
+## Exploratory Data Analysis
+### Missing Data Analysis
+
+First we define a function 'check_and_print_missing_values' that checks a given dataset for missing values and prints a summary of the missing values for each column. We then use this function to check oiur dataset.
+```{r}
+# Function to check for missing values
+check_and_print_missing_values <- function(data) {
+  missing_values <- colSums(is.na(data))
+  total_rows <- nrow(data)
+
+  columns_with_missing <- names(missing_values[missing_values > 0])
+  missing_counts <- missing_values[missing_values > 0]
+  missing_percent <- (missing_counts / total_rows) * 100
+
+  if (length(columns_with_missing) > 0) {
+    cat("Columns with missing values:\n")
+    for (i in seq_along(columns_with_missing)) {
+      cat(columns_with_missing[i], ": ", missing_counts[i], " missing values (",
+          sprintf("%.2f%%", missing_percent[i]), " of total rows)\n")
+    }
+  } else {
+    cat("No missing values found in any column.\n")
+  }
+}
+
+# Use function to check for missing values
+check_and_print_missing_values(data)
+```
+
+Acute.Malnutrition column has the highest ratio of missing values with about 25% missing values. Stunted columns also have missing values of less than 1% of total data.
+
+Next define a function 'check_duplicate_rows' that checks for duplicate rows in a given dataset. The function returns a message indicating whether duplicate rows are present or not. Then we use the function to check the dataset.
+
+```{r}
+# Function to check for duplicates
+check_duplicate_rows <- function(data) {
+  duplicated_rows <- anyDuplicated(apply(data, 1, paste, collapse = ""))
+  if (duplicated_rows > 0) {
+    return("There are duplicate rows in the data.")
+  } else {
+    return("There are no duplicate rows in the data.")
+  }
+}
+# Use the function to check for duplicates
+check_duplicate_rows(data)
+```
+
+The missing values need to be explored further to determine the most appropriate method to deal with them. Start by looking at the top 15 counties with the most number of missing values.
+
+```{r}
+# Subset the data to include only 'county' and 'Acute.Malnutrition' columns
+missing_values_data <- data %>%
+  select(county, Acute.Malnutrition)
+
+# Calculate number of missing values for each county in 'Acute.Malnutrition' column
+missing_counts <- missing_values_data %>%
+  group_by(county) %>%
+  summarize(Missing_Values = sum(is.na(Acute.Malnutrition)))
+
+# Sort counties based on the number of missing values in descending order
+sorted_missing_counts <- missing_counts %>%
+  arrange(desc(Missing_Values))
+
+# Select the top 15 counties with the most missing values
+top_15_counties_with_missing_values <- head(sorted_missing_counts, 15)
+
+# Print the result
+print(top_15_counties_with_missing_values)
+  
+```
+Plotting the average acute malnutrition values for all the counties:
+
+```{r}
+# Load ggplot2
+library(ggplot2)
+
+# Calculate the average acute malnutrition value for each county
+average_values <- data %>%
+  group_by(county) %>%
+  summarize(Avg_Acute_Malnutrition = mean(Acute.Malnutrition, na.rm = TRUE))
+
+# Create a horizontal bar plot to visualize the average values
+ggplot(average_values, aes(x = Avg_Acute_Malnutrition, y = reorder(county, Avg_Acute_Malnutrition))) +
+  geom_bar(stat = "identity", fill = "dodgerblue") +
+  labs(x = "Average Acute Malnutrition",
+       y = "Counties",
+       title = "Average Acute Malnutrition by County") +
+  theme_minimal() 
+
+```
+
+From the above plot, we observe that all the top 15 counties with the most number of missing values in Acute.Malnutrition column have very low average Acute Malnutrition values. This is an indication that missing values in the Acute.Malnutrition column might be zero.
+
+There might have been Zero-Reporting Bias, meaning there might have been a bias towards reporting zero values instead of missing values. If the missing values are indeed zeros, imputing them with the mean or other values may introduce biases. Therefore, missing values will be imputed with zero.
+
+```{r}
+# Replace missing values with zeros
+data <- data %>%
+  mutate(
+    Acute.Malnutrition = if_else(is.na(Acute.Malnutrition), 0, Acute.Malnutrition),
+    stunted.6.23.months = if_else(is.na(stunted.6.23.months), 0, stunted.6.23.months),
+    stunted.0..6.months = if_else(is.na(stunted.0..6.months), 0, stunted.0..6.months),
+    stunted.24.59.months = if_else(is.na(stunted.24.59.months), 0, stunted.24.59.months)
+  )
+
+# Confirm missing values have been replaced
+check_and_print_missing_values(data)
+```
+<hr> <!-- Horizontal border here -->
+
+### Trends Analysis & Age Group Comparison
+
+Let's explore trends in average deworming and diarrhea cases over the period of the dataset.
+
+```{r}
+# Convert 'period' to a Date object for proper plotting
+data$period <- as.Date(paste("01", data$period), format = "%d %b-%y")
+
+# Calculate the average deworming and average diarrhea cases over time
+average_trends <- data %>%
+  group_by(period) %>%
+  summarize(Avg_Total_Deworming = mean(Total.Dewormed, na.rm = TRUE),
+            Avg_Diarrhea_Cases = mean(diarrhoea.cases, na.rm = TRUE))
+
+# Create a line plot to visualize the trends
+ggplot(average_trends, aes(x = period)) +
+  geom_line(aes(y = Avg_Total_Deworming, color = "Average Total Deworming")) +
+  geom_line(aes(y = Avg_Diarrhea_Cases, color = "Average Diarrhea Cases")) +
+  labs(x = "Period",
+       y = "Average Count",
+       title = "Trends of Average Deworming and Diarrhea Cases",
+       color = "Indicator") +
+  theme_minimal() 
+
+```
+
+There seems to be seasonality in average deworming whereby there is a spike in deworming activities twice a year. There is also a linear trend in deworming whereby peak deworming has been linearly increasing.
+
+There seems to be no impact of deworming on cases of diarrhea.
+
+There is stationarity in average diarrhea cases as there is no trend or seasonality. Average diarrhea cases have been relatively unchanged for the period of the data.
+
+Exploring the average stunted cases for the 3 age groups over time:
+
+```{r}
+# Calculate the average values for the three specified columns over time
+average_trends <- data %>%
+  group_by(period) %>%
+  summarize(Avg_stunted_6_23_months = mean(`stunted.6.23.months`, na.rm = TRUE),
+            Avg_stunted_0_6_months = mean(`stunted.0..6.months`, na.rm = TRUE),
+            Avg_stunted_24_59_months = mean(`stunted.24.59.months`, na.rm = TRUE))
+
+# Convert data from wide to long format for better plotting
+average_trends_long <- tidyr::pivot_longer(average_trends,
+                                           cols = starts_with("Avg_stunted"),
+                                           names_to = "Indicator",
+                                           values_to = "Average_Count")
+
+# Create a line plot to visualize the temporal trends
+ggplot(average_trends_long, aes(x = period, y = Average_Count, color = Indicator)) +
+  geom_line() +
+  labs(x = "Period",
+       y = "Average Count",
+       title = "Trends of Average Stunted Cases for Various Ages Groups",
+       color = "Indicator") +
+  theme_minimal() +
+  scale_color_manual(values = c("red", "blue", "green"),
+                     labels = c("6-23 months", "0-6 months", "24-59 months"))
+```
+
+Average stunted cases have been linearly increasing for the period. Ages 24-59 months have consistently had the highest stunted cases. 
+
+Exploring underweight cases for the 3 age groups over time:
+
+```{r}
+# Calculate average values for the three specified columns over time
+average_trends <- data %>%
+  group_by(period) %>%
+  summarize(Avg_Underweight_0_6_months = mean(`Underweight.0..6.months`, na.rm = TRUE),
+            Avg_Underweight_6_23_months = mean(`Underweight.6.23.months`, na.rm = TRUE),
+            Avg_Underweight_24_59_months = mean(`Underweight.24.59.Months`, na.rm = TRUE))
+
+# Convert data from wide to long format for better plotting
+average_trends_long <- tidyr::pivot_longer(average_trends,
+                                           cols = starts_with("Avg_Underweight"),
+                                           names_to = "Indicator",
+                                           values_to = "Average_Count")
+
+# Create a line plot to visualize the trends
+ggplot(average_trends_long, aes(x = period, y = Average_Count, color = Indicator)) +
+  geom_line() +
+  labs(x = "Period",
+       y = "Average Count",
+       title = "Trends of Average Underweight Cases for Various Ages Groups",
+       color = "Indicator") +
+  theme_minimal() +
+  scale_color_manual(values = c("purple", "darkorange", "brown"),
+                     labels = c("0-6 months", "6-23 months", "24-59 months"))
+```
+
+Average underweight cases for children aged 6-23 months and 24-59 months have been increasing, with a steeper rate of increase observed from mid 2022. From beginning of 2022, cases of underweight children aged 0-6 months has been lower than the other age groups. The highest average underweight cases is for children 24-59 months.
+
+Exploring acute malnutrition cases for the 3 age groups over time:
+
+```{r}
+# Calculate the average values for the 'Acute.Malnutrition' column over time
+average_trends <- data %>%
+  group_by(period) %>%
+  summarize(Avg_Acute_Malnutrition = mean(`Acute.Malnutrition`, na.rm = TRUE))
+
+# Create a line plot to visualize the temporal trends for 'Acute.Malnutrition'
+ggplot(average_trends, aes(x = period, y = Avg_Acute_Malnutrition)) +
+  geom_line(color = "red") +
+  labs(x = "Period",
+       y = "Average Count",
+       title = "Trends of Average Acute Malnutrition Cases",
+       color = "Indicator") +
+  theme_minimal()
+```
+
+Average acute malnutrition cases have been increasing for the period of the dataset. The increasing has been steeper as from 2022.
+
+<hr> <!-- Horizontal border here -->
+
+### County-wise Analysis
+We explore regional disparities in child health by looking for significant differences in child health indicators between different counties in Kenya. We also investigate which counties show better or worse outcomes for each indicator.
+
+Plot a bar plot of average stunted cases for the 3 age groups for each county:
+
+```{r}
+# Calculate the average values for the three specified columns by county
+averages_by_county <- data %>%
+  group_by(county) %>%
+  summarize(Avg_stunted_6_23_months = mean(`stunted.6.23.months`, na.rm = TRUE),
+            Avg_stunted_0_6_months = mean(`stunted.0..6.months`, na.rm = TRUE),
+            Avg_stunted_24_59_months = mean(`stunted.24.59.months`, na.rm = TRUE))
+
+# Convert data from wide to long format for better plotting
+averages_by_county_long <- tidyr::pivot_longer(averages_by_county,
+                                              cols = starts_with("Avg_stunted"),
+                                              names_to = "Indicator",
+                                              values_to = "Average_Count")
+
+# Create a stacked horizontal bar plot
+ggplot(averages_by_county_long, aes(y = county, x = Average_Count, fill = Indicator)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Average Count",
+       y = "County",
+       title = "Average Stunted Cases by County for Various Ages",
+       fill = "Indicator") +
+  scale_fill_discrete(labels = c("0-6 months", "24-59 months", "6-23 months")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1),
+        legend.position = "bottom")
+```
+
+For children aged 0-6 months, counties with the highest stunted cases are Nairobi, Kiambu and Kilifi respectively.  For children aged 6-23 months, counties with the highest stunted cases are Nairobi, Kilifi and Turkana respectively. For children aged 23-59 months, counties with the highest stunted cases are Turkana, Nairobi and Kwale respectively.
+
+Plot a bar plot of average underweight cases for the 3 age groups for each county:
+
+```{r}
+# Calculate the average values for the three specified columns by county
+averages_by_county <- data %>%
+  group_by(county) %>%
+  summarize(Avg_Underweight_0_6_months = mean(`Underweight.0..6.months`, na.rm = TRUE),
+            Avg_Underweight_6_23_months = mean(`Underweight.6.23.months`, na.rm = TRUE),
+            Avg_Underweight_24_59_months = mean(`Underweight.24.59.Months`, na.rm = TRUE))
+
+# Convert data from wide to long format for better plotting
+averages_by_county_long <- tidyr::pivot_longer(averages_by_county,
+                                              cols = starts_with("Avg_Underweight"),
+                                              names_to = "Indicator",
+                                              values_to = "Average_Count")
+
+# Create a stacked horizontal bar plot
+ggplot(averages_by_county_long, aes(y = county, x = Average_Count, fill = Indicator)) +
+  geom_bar(stat = "identity") +
+  labs(x = "Average Count",
+       y = "County",
+       title = "Average Underweight Cases by County for Various Ages",
+       fill = "Indicator") +
+  scale_fill_discrete(labels = c("0-6 months", "6-23 months", "24-59 months")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(hjust = 1),
+        legend.position = "bottom")
+```
+
+Counties with the highest underweight cases for ages 0-6 months are Nairobi, Nakuru and Kiambu respectively.  Counties with the highest underweight cases for ages 6-23 months are Turkana, Marsabit, Garissa and Wajir respectively, while counties with the highest underweight cases for ages 24-59 months are Nairobi, Turkana, and Kilifi respectively.
+
+Plot of total dewormed from January 2021 to June 2023 for each county:
+
+```{r}
+# Calculate the sum of Total Deworming for each county for the entire period
+sum_by_county <- data %>%
+  group_by(county) %>%
+  summarize(Sum_Total_Dewormed = sum(Total.Dewormed, na.rm = TRUE)) %>%
+  arrange(desc(Sum_Total_Dewormed))  # Sort in descending order
+
+# Convert the 'county' column to a factor with levels sorted in descending order of the sum
+sum_by_county$county <- factor(sum_by_county$county,
+                               levels = rev(sum_by_county$county))
+
+# Create a horizontal bar plot to visualize the sum of Total Dewormed per county
+ggplot(sum_by_county, aes(x = Sum_Total_Dewormed, y = county)) +
+  geom_bar(stat = "identity", fill = "dodgerblue") +
+  labs(x = "Total Dewormed",
+       y = "County",
+       title = "Total Dewormed per County",
+       fill = "") +
+  theme_minimal()
+
+```
+
+Nairobi, Kilifi, Nakuru and Narok counties have the highest total dewormed number of children while Lamu, Bomet, Kericho and Vihiga counties have the lowest dewormed children.
+
+Plot the total diarrhea cases from January 2021 to June 2023 for each county:
+
+```{r}
+# Calculate the sum of diarrhea cases for each county for the entire period
+sum_diarrhea_by_county <- data %>%
+  group_by(county) %>%
+  summarize(Sum_Diarrhea_Cases = sum(diarrhoea.cases, na.rm = TRUE)) %>%
+  arrange(desc(Sum_Diarrhea_Cases))  # Sort in descending order
+
+# Convert the 'county' column to a factor with levels sorted in descending order of the sum
+sum_diarrhea_by_county$county <- factor(sum_diarrhea_by_county$county,
+                                        levels = rev(sum_diarrhea_by_county$county))
+
+# Create a horizontal bar plot to visualize the sum of diarrhea cases per county
+ggplot(sum_diarrhea_by_county, aes(x = Sum_Diarrhea_Cases, y = county)) +
+  geom_bar(stat = "identity", fill = "cyan4") +
+  labs(x = "Total Diarrhea Cases",
+       y = "County",
+       title = "Total Diarrhea Cases per County",
+       fill = "") +
+  theme_minimal()
+```
+
+Counties with the most diarrhea cases are Nairobi, Kilifi, Turkana and Mandera counties while counties with the least diarrhea cases are Vihiga, Taita Taveta, Lamu and Nyamira.
+
+### Geospatial Analysis
+
+Choropleth maps will be plotted to quickly identify spatial patterns and trends in the data. By visualizing health indicators on a map, we will easily see which areas have higher or lower values, clusters, or gradients of the variables. The maps will help us understand regional disparities in child health indicators. 
+
+Loading the shapefile and inspecting it:
+
+```{r}
+# Load sf library
+library(sf)
+
+# Read the shapefile
+shapefile <- st_read("shapefiles")
+
+# Preview the shapefile
+head(shapefile)
+```
+Merging the data with the shapefile and plotting a choropleth map of the total number of children with acute malnutrition:
+
+```{r}
+# Step 1: Aggregate the data to get total Acute Malnutrition cases for each county
+aggregated_data <- data %>%
+  group_by(county) %>%
+  summarize(Total_Acute_Malnutrition = sum(Acute.Malnutrition, na.rm = TRUE))
+
+# Step 2: Merge aggregated data with the shapefile
+merged_data <- merge(shapefile, aggregated_data, by.x = "Name", by.y = "county")
+
+# Set the CRS for the merged_data to match the CRS of the shapefile
+st_crs(merged_data) <- st_crs(shapefile)
+
+# Step 3: Create the choropleth map for total Acute Malnutrition cases
+ggplot() +
+  geom_sf(data = merged_data, aes(fill = Total_Acute_Malnutrition)) +
+  scale_fill_gradient(low = "#e5f5f9", high = "#2ca25f") +
+  labs(title = "Total no. of Children <5 years with Acute Malnutrition",
+       subtitle = "Jan 2021 to Jun 2023",
+       fill = "Total Acute Malnutrition Cases") +
+  theme_minimal()
+
+```
+
+Wajir County has the highest total acute malnutrition cases for the timeframe of the data.
+
+Plotting a choropleth map of the total number of children with diarrhea:
+```{r}
+# Aggregate the data to get total diarrhoea cases for each county
+aggregated_data <- data %>%
+  group_by(county) %>%
+  summarize(Total_diarrhoea_cases = sum(diarrhoea.cases, na.rm = TRUE))
+
+# Merge aggregated data with the shapefile
+merged_data <- merge(shapefile, aggregated_data, by.x = "Name", by.y = "county")
+
+# Set the CRS for the merged_data to match the CRS of the shapefile
+st_crs(merged_data) <- st_crs(shapefile)
+
+# Create the choropleth map for total diarrhoea cases
+ggplot() +
+  geom_sf(data = merged_data, aes(fill = Total_diarrhoea_cases)) +
+  scale_fill_gradient(low = "#ffeda0", high = "#f03b20") +
+  labs(title = "Total no. of Children <5 years with Diarrhoea",
+       subtitle = "Jan 2021 to Jun 2023",
+       fill = "Total Diarrhoea Cases") +
+  theme_minimal()
+```
+
+Nairobi, Turkana and Kilifi counties have the most number cases of diarrhea reported.
+
+Plotting a choropleth map of the total number of children dewormed:
+```{r}
+# Aggregate the data to get total dewormed cases for each county
+aggregated_data <- data %>%
+  group_by(county) %>%
+  summarize(Total_dewormed = sum(Total.Dewormed, na.rm = TRUE))
+
+# Merge aggregated data with the shapefile
+merged_data <- merge(shapefile, aggregated_data, by.x = "Name", by.y = "county")
+
+# Set the CRS for the merged_data to match the CRS of the shapefile
+st_crs(merged_data) <- st_crs(shapefile)
+
+# Create the choropleth map 
+ggplot() +
+  geom_sf(data = merged_data, aes(fill = Total_dewormed)) +
+  scale_fill_gradient(low = "#e7e1ef", high = "#dd1c77") +
+  labs(title = "Total Number of Children Dewormed",
+       subtitle = "Jan 2021 to Jun 2023",
+       fill = "Total Dewormed") +
+  theme_minimal()
+```
+
+Nairobi County has the most number of dewormings done.
+
+Plotting a choropleth map of the average number of underweight children aged 24-59 months:
+
+```{r}
+# Aggregate the data to get avg underweight (24-59) months for each county
+aggregated_data <- data %>%
+  group_by(county) %>%
+  summarize(Avg_Underweight_24_59 = mean(Underweight.24.59.Months, na.rm = TRUE))
+
+# Merge aggregated data with the shapefile
+merged_data <- merge(shapefile, aggregated_data, by.x = "Name", by.y = "county")
+
+# Set the CRS for the merged_data to match the CRS of the shapefile
+st_crs(merged_data) <- st_crs(shapefile)
+
+# Create the choropleth map 
+ggplot() +
+  geom_sf(data = merged_data, aes(fill = Avg_Underweight_24_59)) +
+  scale_fill_gradient(low = "#e0ecf4", high = "#8856a7") +
+  labs(title = "Average no. of Underweight Children (24-59 months)",
+       subtitle = "Jan 2021 to Jun 2023",
+       fill = "Avg no. of underweight") +
+  theme_minimal()
+```
+
+Turkana, Marsabit, Wajir and Garissa counties have the highest cases of underweight children aged 24-59 months.
+
+Plotting a choropleth map of the average number of stunted children aged 24-59 months:
+```{r}
+# Aggregate the data to get avg stunted (24-59) months for each county
+aggregated_data <- data %>%
+  group_by(county) %>%
+  summarize(Avg_stunted_24_59 = mean(stunted.24.59.months, na.rm = TRUE))
+
+# Merge aggregated data with the shapefile
+merged_data <- merge(shapefile, aggregated_data, by.x = "Name", by.y = "county")
+
+# Set the CRS for the merged_data to match the CRS of the shapefile
+st_crs(merged_data) <- st_crs(shapefile)
+
+# Create the choropleth map 
+ggplot() +
+  geom_sf(data = merged_data, aes(fill = Avg_stunted_24_59)) +
+  scale_fill_gradient(low = "#edf8b1", high = "#2c7fb8") +
+  labs(title = "Average no. of Children Stunted (24-59 months)",
+       subtitle = "Jan 2021 to Jun 2023",
+       fill = "Avg Stunted") +
+  theme_minimal()
+```
+
+Nairobi County and counties in the northern and north eastern regions of the country have high numbers of stunted children aged 24-59 months.
+<hr> <!-- Horizontal border here -->
+
+## Conclusion
+Below are the conclusions drawn from this analysis:
+
+* **Deworming Trends:** There is a clear seasonality in average deworming activities, with two spikes observed annually. Additionally, there is a linear increasing trend in deworming over the period, indicating a progressive effort to combat parasitic worm infections.
+
+* **Deworming Impact on Diarrhea Cases:** There seems to be no significant impact of deworming on cases of diarrhea. The number of diarrhea cases remains relatively unchanged throughout the period, despite the increased deworming activities.
+
+* **Stunted Cases:** Average stunted cases have been consistently increasing over the dataset's timeframe. The age group of 24-59 months shows the highest and most consistent stunted cases.
+
+* **Underweight Cases:** Underweight cases for children aged 6-23 months and 24-59 months have been increasing, with a steeper rate of increase observed from mid-2022. However, for children aged 0-6 months, underweight cases have been lower than the other age groups from the beginning of 2022. The highest average underweight cases are observed in the 24-59 months age group.
+
+* **Acute Malnutrition Cases:** Average acute malnutrition cases have been increasing for the dataset's duration, with a steeper increase observed from 2022.
+
+* **County-Level Insights:** Different counties in Kenya exhibit varying patterns in child health indicators. For stunted cases, Nairobi, Kiambu, Kilifi, Turkana, and Kwale are among the counties with the highest stunted cases in different age groups. For underweight cases, Nairobi, Nakuru, Kiambu, Turkana, Marsabit, Garissa, and Wajir are among the counties with the highest underweight cases in different age groups. Nairobi, Kilifi, Nakuru, and Narok are among the counties with the highest number of dewormed children, while Lamu, Bomet, Kericho, and Vihiga have the lowest number of dewormed children. Nairobi, Kilifi, Turkana, and Mandera are among the counties with the most diarrhea cases, while Vihiga, Taita Taveta, Lamu, and Nyamira have the least diarrhea cases.
+
+Overall, the observations highlight the importance of continuous efforts to combat child health challenges, such as stunting and underweight cases, through targeted interventions, especially in specific age groups and high-burden counties. The lack of a noticeable impact of deworming on diarrhea cases might suggest the need to explore additional interventions to address diarrhea-related issues.
+
+There was a challenge faced in this analysis caused by the limited timeframe of the data. Data spanning a longer period would provide more insights by revealing more trends and be suitable for predictive modelling.
+<hr> <!-- Horizontal border here -->
+
+## Recommendations
+Based on the conclusions drawn from this analysis, below are the recommendations for the non-profit organization:
+
+* **Enhance Deworming Strategies:** Given the observed seasonality in deworming activities and the increasing trend in deworming efforts, the organization should continue its efforts to deworm children regularly. However, to potentially address the lack of impact on diarrhea cases, the organization could consider evaluating the efficacy of the current deworming protocols and explore complementary interventions to reduce diarrheal diseases.
+
+* **Targeted Nutrition Interventions:** The increasing trend in stunted and underweight cases calls for targeted nutrition interventions for specific age groups, particularly for children aged 6-23 months and 24-59 months. The organization should focus on providing nutritional support, education, and access to nutrient-rich foods to combat malnutrition effectively.
+
+* **Acute Malnutrition Management:** Given the steeper increase in acute malnutrition cases from 2022, the organization should strengthen its acute malnutrition management programs. Early detection and timely treatment can help prevent severe cases and associated complications.
+
+* **Regional Focus:** The organization should take into account the regional disparities observed in child health indicators. By tailoring interventions based on the specific health needs of each county, the organization can ensure that resources are directed where they are most needed.
+
+By implementing these recommendations, the non-profit organization can make significant strides in improving child health in Kenya, addressing malnutrition, reducing disease burden, and ensuring healthier outcomes for children across the country.
+<hr> <!-- Horizontal border here -->
+
+
+
+
+
+
+
+
+
+
